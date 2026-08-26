@@ -7,9 +7,10 @@ import { spawnSync } from 'node:child_process';
 
 const root = process.cwd();
 const sourcePkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
-const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const npmExecPath = process.env.npm_execpath;
+assert.ok(npmExecPath, 'npm_execpath is required; run this verifier through npm run test:package');
 
-const runNpm = (args, options = {}) => spawnSync(npmCommand, args, {
+const runNpm = (args, options = {}) => spawnSync(process.execPath, [npmExecPath, ...args], {
   encoding: 'utf8',
   windowsHide: true,
   ...options,
