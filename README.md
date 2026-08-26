@@ -25,23 +25,24 @@
 - Node.js 20+
 - ESM
 
-## Install from GitHub Packages
-
-The package is published under the personal GitHub scope `@imedkablavi`. Public GitHub npm packages still require authentication to download.
-
-Configure the scope once:
-
-```bash
-npm config set @imedkablavi:registry https://npm.pkg.github.com
-```
-
-GitHub Packages currently requires authentication for npm package downloads. Use a GitHub token with package-read permission in your npm configuration, then install:
+## Install
 
 ```bash
 npm install @imedkablavi/exec-policy
 ```
 
-Do not commit package tokens to a repository.
+**Requirements:** Node.js 20 or newer. The package is published as an ES module.
+
+### GitHub Packages
+
+The same package can also be distributed through GitHub Packages under the personal GitHub scope `@imedkablavi`. If you intentionally use GitHub Packages, configure the scope registry and authenticate with a GitHub token that has package-read permission:
+
+```bash
+npm config set @imedkablavi:registry https://npm.pkg.github.com
+npm install @imedkablavi/exec-policy
+```
+
+Do not commit registry tokens to a repository.
 
 ## Quick start
 
@@ -200,7 +201,6 @@ const exec = createExecPolicy({
 ```
 
 For high-trust deployments, absolute executable paths are preferable to a mutable `PATH`. When a bare executable name is used, relative `PATH` entries such as `.` are ignored; only absolute entries participate in resolution. This removes a common current-directory hijack path, but it does not make a writable absolute `PATH` directory trustworthy.
-
 
 ### Windows executable note
 
