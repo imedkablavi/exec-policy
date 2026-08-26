@@ -1,0 +1,25 @@
+name: Feature request
+description: Propose a narrowly scoped policy or process-control improvement
+title: "[Feature]: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What execution-policy problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the smallest safe API or behavior change.
+    validations:
+      required: true
+  - type: textarea
+    id: security
+    attributes:
+      label: Security boundary
+      description: Explain any effect on executable, argv, cwd, environment, approval or audit behavior.
+    validations:
+      required: true

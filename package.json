@@ -1,0 +1,65 @@
+{
+  "name": "@imedkablavi/exec-policy",
+  "version": "0.1.0",
+  "description": "Fail-closed, policy-gated command execution for Node.js automation and AI agents.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md",
+    "THREAT_MODEL.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "test:package": "npm run build && node scripts/verify-package.mjs",
+    "prepack": "npm run build",
+    "test:coverage": "npm run build && node --experimental-test-coverage --test tests/*.test.mjs",
+    "security:check": "npm audit --audit-level=high",
+    "prepublishOnly": "npm run typecheck && npm test && npm run test:package"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/imedkablavi/exec-policy.git"
+  },
+  "bugs": {
+    "url": "https://github.com/imedkablavi/exec-policy/issues"
+  },
+  "homepage": "https://github.com/imedkablavi/exec-policy#readme",
+  "keywords": [
+    "security",
+    "nodejs",
+    "typescript",
+    "command-execution",
+    "child-process",
+    "policy",
+    "ai-agents",
+    "automation",
+    "command-injection",
+    "secure-exec"
+  ],
+  "author": "Imed Kablavi",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.43",
+    "typescript": "5.8.3"
+  },
+  "sideEffects": false
+}
