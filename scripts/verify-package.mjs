@@ -16,38 +16,50 @@ const runNpm = (args, options = {}) => spawnSync(process.execPath, [npmExecPath,
   ...options,
 });
 
-const pack = runNpm(['pack', '--json', '--ignore-scripts'], { cwd: root });
-assert.equal(pack.status, 0, pack.error?.message || pack.stderr || pack.stdout);
-const parsed = JSON.parse(pack.stdout);
-const packed = parsed[0];
-const filename = packed?.filename;
-assert.ok(filename, 'npm pack did not return a filename');
-
-const packedFiles = new Set((packed.files ?? []).map((entry) => entry.path));
-for (const required of [
-  'package.json',
-  'README.md',
-  'LICENSE',
-  'SECURITY.md',
-  'THREAT_MODEL.md',
-  'CHANGELOG.md',
-  'dist/index.js',
-  'dist/index.d.ts',
-]) {
-  assert.ok(packedFiles.has(required), `published package is missing ${required}`);
-}
-for (const file of packedFiles) {
-  assert.equal(file.startsWith('tests/'), false, `tests must not be published: ${file}`);
-  assert.equal(file.startsWith('.github/'), false, `GitHub workflow metadata must not be published: ${file}`);
-  assert.equal(file.startsWith('src/'), false, `TypeScript source must not be published: ${file}`);
-  assert.equal(file.startsWith('node_modules/'), false, `node_modules must not be published: ${file}`);
-}
-
+const packDir = await mkdtemp(path.join(tmpdir(), 'exec-policy-pack-'));
 const work = await mkdtemp(path.join(tmpdir(), 'exec-policy-package-'));
+
 try {
+  // Pack outside the repository so this verifier cannot collide with an outer
+  // `npm publish`/`npm publish --dry-run` lifecycle using the same tarball name.
+  const pack = runNpm([
+    'pack',
+    '--json',
+    '--ignore-scripts',
+    '--pack-destination',
+    packDir,
+  ], { cwd: root });
+  assert.equal(pack.status, 0, pack.error?.message || pack.stderr || pack.stdout);
+
+  const parsed = JSON.parse(pack.stdout);
+  const packed = parsed[0];
+  const filename = packed?.filename;
+  assert.ok(filename, 'npm pack did not return a filename');
+  const tarballPath = path.join(packDir, filename);
+
+  const packedFiles = new Set((packed.files ?? []).map((entry) => entry.path));
+  for (const required of [
+    'package.json',
+    'README.md',
+    'LICENSE',
+    'SECURITY.md',
+    'THREAT_MODEL.md',
+    'CHANGELOG.md',
+    'dist/index.js',
+    'dist/index.d.ts',
+  ]) {
+    assert.ok(packedFiles.has(required), `published package is missing ${required}`);
+  }
+  for (const file of packedFiles) {
+    assert.equal(file.startsWith('tests/'), false, `tests must not be published: ${file}`);
+    assert.equal(file.startsWith('.github/'), false, `GitHub workflow metadata must not be published: ${file}`);
+    assert.equal(file.startsWith('src/'), false, `TypeScript source must not be published: ${file}`);
+    assert.equal(file.startsWith('node_modules/'), false, `node_modules must not be published: ${file}`);
+  }
+
   const init = runNpm(['init', '-y'], { cwd: work });
   assert.equal(init.status, 0, init.error?.message || init.stderr || init.stdout);
-  const install = runNpm(['install', '--ignore-scripts', path.join(root, filename)], { cwd: work });
+  const install = runNpm(['install', '--ignore-scripts', tarballPath], { cwd: work });
   assert.equal(install.status, 0, install.error?.message || install.stderr || install.stdout);
 
   const imported = spawnSync(process.execPath, ['--input-type=module', '-e', `
@@ -74,7 +86,7 @@ try {
     assert.equal(pkg.scripts?.[forbidden], undefined, `published package must not define ${forbidden}`);
   }
 } finally {
-  await rm(path.join(root, filename), { force: true });
+  await rm(packDir, { recursive: true, force: true });
   await rm(work, { recursive: true, force: true });
 }
 
