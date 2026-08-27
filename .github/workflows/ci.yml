@@ -31,8 +31,13 @@ jobs:
         run: npm run test:coverage
       - if: matrix.node == 24
         run: npm run test:package
-      - if: matrix.node == 24
-        run: npm publish --dry-run --access public
+      - name: Exercise npm publish dry-run lifecycle
+        if: matrix.node == 24
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm version "0.0.0-ci.${GITHUB_RUN_ID}" --no-git-tag-version
+          npm publish --dry-run --access public
       - if: matrix.node == 24
         run: npm run security:check
 
