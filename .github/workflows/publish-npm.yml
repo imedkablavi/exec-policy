@@ -1,0 +1,86 @@
+name: Publish npm Package
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact package version to publish (for example 0.1.1)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Verify npm supports Trusted Publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --version
+          npm --version
+          node -e "const [major, minor] = process.versions.npm.split('.').map(Number); if (major < 11 || (major === 11 && minor < 5)) process.exit(1)"
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run test:package
+      - run: npm run security:check
+
+      - name: Verify requested version
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          if [[ "${GITHUB_EVENT_NAME}" == "release" ]]; then
+            test "${GITHUB_REF_NAME}" = "v${VERSION}"
+          else
+            test "${{ inputs.version }}" = "${VERSION}"
+          fi
+
+      - name: Check whether this version already exists
+        id: existing
+        shell: bash
+        run: |
+          set -euo pipefail
+          PACKAGE=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          set +e
+          OUTPUT=$(npm view "${PACKAGE}@${VERSION}" version --registry=https://registry.npmjs.org 2>&1)
+          STATUS=$?
+          set -e
+          if [[ ${STATUS} -eq 0 ]]; then
+            echo "exists=true" >> "${GITHUB_OUTPUT}"
+            echo "${PACKAGE}@${VERSION} already exists on npm; skipping immutable republish."
+          elif grep -qE 'E404|404 Not Found' <<<"${OUTPUT}"; then
+            echo "exists=false" >> "${GITHUB_OUTPUT}"
+          else
+            echo "${OUTPUT}" >&2
+            exit ${STATUS}
+          fi
+
+      - name: Publish to npm with OIDC
+        if: steps.existing.outputs.exists != 'true'
+        run: npm publish --access public --registry=https://registry.npmjs.org
+
+      - name: Verify package version on npm
+        shell: bash
+        run: |
+          set -euo pipefail
+          PACKAGE=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          PUBLISHED=$(npm view "${PACKAGE}@${VERSION}" version --registry=https://registry.npmjs.org)
+          test "${PUBLISHED}" = "${VERSION}"
