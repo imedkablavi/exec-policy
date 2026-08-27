@@ -13,6 +13,13 @@ assert.ok(npmExecPath, 'npm_execpath is required; run this verifier through npm 
 const runNpm = (args, options = {}) => spawnSync(process.execPath, [npmExecPath, ...args], {
   encoding: 'utf8',
   windowsHide: true,
+  env: {
+    ...process.env,
+    // `npm publish --dry-run` exports this config into lifecycle scripts. The
+    // verifier needs a real temporary tarball/install even when its caller is
+    // only simulating publication, so do not inherit the outer dry-run mode.
+    npm_config_dry_run: 'false',
+  },
   ...options,
 });
 
