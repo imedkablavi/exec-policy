@@ -32,6 +32,8 @@ jobs:
       - if: matrix.node == 24
         run: npm run test:package
       - if: matrix.node == 24
+        run: npm publish --dry-run --access public
+      - if: matrix.node == 24
         run: npm run security:check
 
   platform-smoke:
