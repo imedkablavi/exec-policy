@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -66,7 +66,7 @@ test('policy snapshots path arrays and does not follow later caller mutation', a
   roots.push(outside);
 
   const decision = await policyInstance.preview('node', ['-v'], { cwd: root });
-  assert.equal(decision.cwd, root);
+  assert.equal(decision.cwd, await realpath(root));
   await assert.rejects(() => policyInstance.preview('node', ['-v'], { cwd: outside }), PolicyDeniedError);
 });
 
