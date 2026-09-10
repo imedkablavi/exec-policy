@@ -13,6 +13,7 @@ All notable changes to this project are documented here.
 - added scheduled CodeQL and OpenSSF Scorecard supply-chain/security analysis
 - refreshed the README around the security boundary, supported use cases and adoption paths
 - added regression coverage for policy snapshots, caller-owned configuration mutation, approval/concurrency behavior, audit redaction, classifier failures and trusted executable roots
+- hardened the abort handoff so an AbortSignal racing with process spawn is observed and terminates the child instead of leaving a cancellation gap
 
 ## [0.1.0] - 2026-08-27
 
