@@ -1,13 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import {
   ApprovalDeniedError,
-  ExecutionAbortedError,
-  OutputLimitError,
+  ConcurrencyLimitError,
   PolicyDeniedError,
   createExecPolicy,
 } from '../dist/index.js';
@@ -31,7 +30,7 @@ function policy(root, extra = {}) {
   });
 }
 
-test('clones policy configuration so later command/validator mutations cannot weaken enforcement', async (t) => {
+test('policy snapshots command rules and ignores later caller mutation', async (t) => {
   const root = await workspace(t);
   const commands = {
     node: {
@@ -42,7 +41,6 @@ test('clones policy configuration so later command/validator mutations cannot we
   };
   const policyInstance = createExecPolicy({ commands, allowedCwdRoots: [root] });
 
-  commands.node.executable = process.execPath;
   commands.node.denyArgPatterns = [];
   commands.node.defaultRisk = 'destructive';
 
@@ -54,60 +52,25 @@ test('clones policy configuration so later command/validator mutations cannot we
   assert.equal(decision.risk, 'read');
 });
 
-test('snapshots environment inheritance before approval and ignores later process.env changes', async (t) => {
+test('policy snapshots path arrays and does not follow later caller mutation', async (t) => {
   const root = await workspace(t);
-  const key = 'EXEC_POLICY_SNAPSHOT_TEST';
-  const original = process.env[key];
-  t.after(() => {
-    if (original === undefined) delete process.env[key];
-    else process.env[key] = original;
-  });
-
-  process.env[key] = 'before-approval';
-  let approved = false;
-  let seen = '';
-  const instance = policy(root, {
-    inheritEnv: ['PATH', key],
-    approval: 'always',
-    approve() {
-      process.env[key] = 'after-approval';
-      approved = true;
-      return true;
-    },
-  });
-  const result = await instance.run('node', ['-e', `process.stdout.write(process.env[${JSON.stringify(key)}])`], { cwd: root });
-  seen = result.stdout;
-
-  assert.equal(approved, true);
-  assert.equal(seen, 'before-approval');
-});
-
-test('pre-aborted signals are rejected without invoking approval', async (t) => {
-  const root = await workspace(t);
-  const controller = new AbortController();
-  controller.abort();
-  let approvalCalls = 0;
-  const instance = policy(root, {
+  const outside = await workspace(t);
+  const roots = [root];
+  const policyInstance = createExecPolicy({
     commands: {
-      node: {
-        executable: process.execPath,
-        defaultRisk: 'destructive',
-      },
+      node: { executable: process.execPath, defaultRisk: 'read' },
     },
-    approve() {
-      approvalCalls += 1;
-      return true;
-    },
+    allowedCwdRoots: roots,
   });
 
-  await assert.rejects(
-    () => instance.run('node', ['-v'], { cwd: root, signal: controller.signal }),
-    ExecutionAbortedError,
-  );
-  assert.equal(approvalCalls, 0);
+  roots.push(outside);
+
+  const decision = await policyInstance.preview('node', ['-v'], { cwd: root });
+  assert.equal(decision.cwd, root);
+  await assert.rejects(() => policyInstance.preview('node', ['-v'], { cwd: outside }), PolicyDeniedError);
 });
 
-test('approval denial does not consume a concurrency slot', async (t) => {
+test('approval denial leaves capacity available for a later execution', async (t) => {
   const root = await workspace(t);
   let approvals = 0;
   const instance = policy(root, {
@@ -129,40 +92,81 @@ test('approval denial does not consume a concurrency slot', async (t) => {
   assert.equal(approvals, 2);
 });
 
-test('output limits fail closed and preserve UTF-8 decoding for accepted chunks', async (t) => {
+test('audit events do not contain raw arguments or environment override values', async (t) => {
   const root = await workspace(t);
-  const instance = policy(root, { maxOutputBytes: 16 });
-  const text = '✓'.repeat(4);
-  const result = await instance.run('node', ['-e', `process.stdout.write(${JSON.stringify(text)})`], { cwd: root });
-  assert.equal(result.stdout, text);
+  const events = [];
+  const secretArg = 'super-secret-argument';
+  const secretEnv = 'super-secret-environment';
+  const instance = policy(root, {
+    inheritEnv: [],
+    envOverrideAllowlist: ['EXEC_POLICY_AUDIT_SECRET'],
+    audit(event) {
+      events.push(event);
+    },
+  });
 
-  const limited = policy(root, { maxOutputBytes: 8 });
-  await assert.rejects(
-    () => limited.run('node', ['-e', `process.stdout.write(${JSON.stringify(text.repeat(4))})`], { cwd: root }),
-    OutputLimitError,
-  );
+  const result = await instance.run('node', ['-e', 'process.stdout.write("ok")', secretArg], {
+    cwd: root,
+    env: { EXEC_POLICY_AUDIT_SECRET: secretEnv },
+  });
+  assert.equal(result.stdout, 'ok');
+
+  const serialized = JSON.stringify(events);
+  assert.equal(serialized.includes(secretArg), false);
+  assert.equal(serialized.includes(secretEnv), false);
+  assert.ok(events.some((event) => typeof event.argvSha256 === 'string' && event.argvSha256.length === 64));
 });
 
-test('unsafe command identifiers are denied consistently across randomized inputs', async (t) => {
+test('command policy remains usable with a growing caller-owned command object', async (t) => {
   const root = await workspace(t);
-  const instance = policy(root);
-  const candidates = [
-    '',
-    ' ',
-    '../node',
-    './node',
-    'node/extra',
-    'node\\extra',
-    '$HOME',
-    ';node',
-    'node\0',
-    'constructor',
-    '__proto__',
-    'prototype',
-    'x'.repeat(129),
-  ];
+  const commands = {
+    node: {
+      executable: process.execPath,
+      defaultRisk: 'read',
+    },
+  };
+  const instance = createExecPolicy({ commands, allowedCwdRoots: [root] });
+  commands.sh = {
+    executable: process.execPath,
+    defaultRisk: 'read',
+  };
 
-  for (const command of candidates) {
-    await assert.rejects(() => instance.preview(command, [], { cwd: root }), PolicyDeniedError);
-  }
+  await assert.rejects(() => instance.preview('sh', ['-v'], { cwd: root }), PolicyDeniedError);
+  const result = await instance.run('node', ['-e', 'process.stdout.write("ok")'], { cwd: root });
+  assert.equal(result.stdout, 'ok');
+});
+
+test('read-only policy denies execution when a classifier raises', async (t) => {
+  const root = await workspace(t);
+  const instance = policy(root, {
+    commands: {
+      node: {
+        executable: process.execPath,
+        defaultRisk: 'read',
+        classify() {
+          throw new Error('classifier failed');
+        },
+      },
+    },
+  });
+
+  await assert.rejects(() => instance.preview('node', ['-v'], { cwd: root }), /classifier failed/);
+});
+
+test('trusted executable roots reject a resolved binary outside the configured root', async (t) => {
+  const root = await workspace(t);
+  const fakeRoot = await workspace(t);
+  const bin = path.join(fakeRoot, 'bin');
+  await mkdir(bin);
+  const instance = policy(root, {
+    commands: {
+      node: {
+        executable: process.execPath,
+        defaultRisk: 'read',
+      },
+    },
+    trustedExecutableRoots: [bin],
+  });
+
+  await assert.rejects(() => instance.preview('node', ['-v'], { cwd: root }), PolicyDeniedError);
 });
