@@ -210,8 +210,16 @@ export class ExecPolicy {
       let spawnError: Error | undefined;
       let killTimer: NodeJS.Timeout | undefined;
       let settled = false;
+      let child: ReturnType<typeof spawn> | undefined;
+      let stop: ((reason: 'timeout' | 'aborted' | 'output') => void) | undefined;
+      let abortRequested = false;
 
-      let child: ReturnType<typeof spawn>;
+      const onAbort = (): void => {
+        abortRequested = true;
+        stop?.('aborted');
+      };
+      options.signal?.addEventListener('abort', onAbort, { once: true });
+
       try {
         child = spawn(decision.resolvedExecutable, [...decision.args], {
           cwd: decision.cwd,
@@ -221,6 +229,7 @@ export class ExecPolicy {
           stdio: ['ignore', 'pipe', 'pipe'],
         });
       } catch (error) {
+        options.signal?.removeEventListener('abort', onAbort);
         this.#activeExecutions -= 1;
         const failure = new ProcessSpawnError(`failed to spawn ${command}`, { cause: error });
         this.#audit({
@@ -235,25 +244,20 @@ export class ExecPolicy {
       }
 
       const forceKill = (): void => {
-        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+        if (child && child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
       };
-      const stop = (reason: 'timeout' | 'aborted' | 'output'): void => {
+      stop = (reason: 'timeout' | 'aborted' | 'output'): void => {
         if (terminationReason !== undefined) return;
         terminationReason = reason;
-        if (child.exitCode === null && child.signalCode === null) {
+        if (child && child.exitCode === null && child.signalCode === null) {
           child.kill('SIGTERM');
           killTimer = setTimeout(forceKill, 500);
           killTimer.unref?.();
         }
       };
 
-      const onAbort = (): void => {
-        stop('aborted');
-      };
-      options.signal?.addEventListener('abort', onAbort, { once: true });
-
       const timeout = setTimeout(() => {
-        stop('timeout');
+        stop?.('timeout');
       }, timeoutMs);
       timeout.unref?.();
 
@@ -261,7 +265,7 @@ export class ExecPolicy {
         if (terminationReason === 'output') return;
         outputBytes += chunk.byteLength;
         if (outputBytes > maxOutputBytes) {
-          stop('output');
+          stop?.('output');
           return;
         }
         if (target === 'stdout') stdout += stdoutDecoder.write(chunk);
@@ -273,6 +277,10 @@ export class ExecPolicy {
       child.once('error', (error) => {
         spawnError = error;
       });
+
+      // The signal listener was registered before spawn(). If abort raced with the
+      // handoff, abortRequested ensures the newly created child is terminated now.
+      if (abortRequested || options.signal?.aborted) stop('aborted');
 
       child.once('close', (code, signal) => {
         if (settled) return;
