@@ -12,6 +12,7 @@ All notable changes to this project are documented here.
 - added a reproducible release checklist covering package verification and npm Trusted Publishing
 - added scheduled CodeQL and OpenSSF Scorecard supply-chain/security analysis
 - refreshed the README around the security boundary, supported use cases and adoption paths
+- added regression coverage for policy snapshots, caller-owned configuration mutation, approval/concurrency behavior, audit redaction, classifier failures and trusted executable roots
 
 ## [0.1.0] - 2026-08-27
 
