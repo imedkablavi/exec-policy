@@ -22,7 +22,7 @@ test('deterministic command-identifier fuzzing never crosses the logical allowli
     commands: { node: { executable: process.execPath, defaultRisk: 'read' } },
     allowedCwdRoots: [root],
   });
-  const alphabet = ' /\\;:$%\t\n\r\0_+-.';
+  const alphabet = ' /\\;:$%\t\n\r\0_+-.''';
   let state = 0x5eedc0de;
 
   for (let i = 0; i < 256; i += 1) {
@@ -46,7 +46,7 @@ test('stateful global and sticky deny regexes are reset between arguments and ex
       node: {
         executable: process.execPath,
         defaultRisk: 'read',
-        denyArgPatterns: [/blocked/g, /\Aunsafe/y],
+        denyArgPatterns: [/blocked/g, /^unsafe/y],
       },
     },
     allowedCwdRoots: [root],
