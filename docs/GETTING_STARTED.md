@@ -113,6 +113,8 @@ await exec.run('deploy', ['release'], {
 });
 ```
 
+Avoid inheriting process-control or dynamic-loader variables unless they are an explicit, trusted requirement. Examples include `NODE_OPTIONS`, `NODE_PATH`, `NODE_EXTRA_CA_CERTS`, `LD_PRELOAD`, `LD_LIBRARY_PATH`, `DYLD_INSERT_LIBRARIES` and `DYLD_LIBRARY_PATH`. Tool-specific variables such as `GIT_SSH_COMMAND` can also change how an otherwise allowlisted command behaves. Treat the inherited environment as part of the security policy, not as general application configuration.
+
 Avoid putting long-lived secrets in argv. Audit events intentionally omit raw argv and environment values, but the operating system or child process may still expose argv/environment through other mechanisms.
 
 ## Resource limits
